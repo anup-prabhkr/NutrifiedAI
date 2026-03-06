@@ -13,7 +13,7 @@ const BottomNav: React.FC = () => {
   const location = useLocation();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-lg lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-lg pb-[env(safe-area-inset-bottom)] lg:hidden">
       <div className="mx-auto flex max-w-md items-center justify-around py-2">
         {tabs.map(({ icon: Icon, label, path }) => {
           const active = location.pathname === path;

@@ -115,8 +115,10 @@ const Analytics: React.FC = () => {
     <AppLayout>
       <h1 className="mb-6 text-2xl font-bold text-primary lg:hidden">Analytics</h1>
       <h1 className="mb-6 hidden text-2xl font-bold text-foreground lg:block">Analytics & Insights</h1>
+      {/* Extra bottom padding so content clears fixed bottom nav on mobile */}
+      <style>{`@media (max-width: 1023px) { .analytics-wrap { padding-bottom: 2rem; } }`}</style>
 
-      <div className="lg:grid lg:grid-cols-2 lg:gap-6">
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 analytics-wrap">
         {/* Left column */}
         <div>
           {/* Weekly Calories Chart */}
@@ -275,13 +277,13 @@ const Analytics: React.FC = () => {
             </div>
 
             {/* Log weight with custom date */}
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <input
                 type="date"
                 title="Log date"
                 value={weightDateInput}
                 onChange={(e) => setWeightDateInput(e.target.value)}
-                className="rounded-lg bg-secondary px-2 py-2 text-xs text-foreground outline-none"
+                className="rounded-lg bg-secondary px-2 py-2 text-xs text-foreground outline-none min-w-0"
               />
               <input
                 type="number"
@@ -289,7 +291,7 @@ const Analytics: React.FC = () => {
                 value={weightInput}
                 onChange={(e) => setWeightInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddWeight()}
-                className="flex-1 rounded-lg bg-secondary px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none"
+                className="w-24 rounded-lg bg-secondary px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground outline-none"
               />
               <button
                 onClick={handleAddWeight}
@@ -329,17 +331,17 @@ const Analytics: React.FC = () => {
             )}
 
             {/* Streak header */}
-            <div className="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground">
-              <span className="w-16" />
+            <div className="mb-2 flex items-center gap-2 text-[10px] text-muted-foreground overflow-x-auto">
+              <span className="w-16 shrink-0" />
               {last7Days.map((d, i) => {
                 const day = new Date(d + "T12:00:00").toLocaleDateString("en-US", { weekday: "short" }).charAt(0);
-                return <span key={i} className="flex w-7 justify-center">{day}</span>;
+                return <span key={i} className="flex w-7 shrink-0 justify-center">{day}</span>;
               })}
             </div>
 
             {/* Streak rows — clicking name opens calendar */}
             {supplements.map((sup) => (
-              <div key={sup.name} className="mb-1 flex items-center gap-2 group">
+              <div key={sup.name} className="mb-1 flex items-center gap-2 group overflow-x-auto">
                 {editingSupId === sup.name ? (
                   <div className="flex w-16 items-center gap-1">
                     <input
@@ -361,7 +363,7 @@ const Analytics: React.FC = () => {
                 ) : (
                   <button
                     onClick={() => setSelectedSupplement(selectedSupplement === sup.name ? null : sup.name)}
-                    className={`w-16 truncate text-xs text-left transition-colors ${selectedSupplement === sup.name ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}
+                    className={`w-16 shrink-0 truncate text-xs text-left transition-colors ${selectedSupplement === sup.name ? "text-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}
                     title={`View calendar for ${sup.name}`}
                   >
                     {sup.name}
@@ -370,16 +372,16 @@ const Analytics: React.FC = () => {
                 {last7Days.map((date, j) => {
                   const taken = sup.takenDates.includes(date);
                   return (
-                    <span key={j} className="flex w-7 justify-center">
+                    <span key={j} className="flex w-7 shrink-0 justify-center">
                       <button
                         onClick={() => toggleSupplement(sup.name, date)}
-                        className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] transition-colors cursor-pointer ${
+                        className={`h-5 w-5 rounded-md border-2 flex items-center justify-center text-[10px] transition-colors cursor-pointer ${
                           taken
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-secondary text-muted-foreground hover:bg-secondary/80"
+                            ? "bg-primary border-primary text-primary-foreground"
+                            : "border-muted-foreground/40 bg-transparent text-transparent hover:border-primary/60"
                         } ${date === today ? "ring-1 ring-primary/30" : ""}`}
                       >
-                        {taken ? "✓" : "○"}
+                        {taken ? <Check size={10} /> : null}
                       </button>
                     </span>
                   );

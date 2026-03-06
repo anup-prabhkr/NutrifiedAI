@@ -30,6 +30,10 @@ export function getAccessToken() {
     return tokens.accessToken;
 }
 
+export function getRefreshToken() {
+    return tokens.refreshToken;
+}
+
 async function refreshAccessToken(): Promise<boolean> {
     if (!tokens.refreshToken) return false;
 
@@ -85,7 +89,7 @@ async function apiFetch<T = any>(
             res = await makeRequest(tokens.accessToken);
         } else {
             clearTokens();
-            window.location.href = '/login';
+            window.dispatchEvent(new Event('auth:session-expired'));
             throw new Error('Session expired');
         }
     }

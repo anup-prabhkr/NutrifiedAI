@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Trash2, Edit3, Check, X } from "lucide-react";
+import { Trash2, Edit3, Check, X, Star } from "lucide-react";
 
 interface MealItemProps {
   id: string;
@@ -12,9 +12,10 @@ interface MealItemProps {
   source: "ai" | "manual";
   onDelete?: (id: string) => void;
   onUpdate?: (id: string, updates: { mealName?: string; calories?: number; protein?: number; carbs?: number; fats?: number }) => void;
+  onSaveRecurring?: (meal: { name: string; calories: number; protein: number; carbs: number; fats: number }) => void;
 }
 
-const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, carbs, fats, source, onDelete, onUpdate }) => {
+const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, carbs, fats, source, onDelete, onUpdate, onSaveRecurring }) => {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name, calories, protein, carbs, fats });
 
@@ -107,6 +108,16 @@ const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, 
             className="ml-1 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
           >
             <Edit3 size={14} />
+          </button>
+        )}
+        {onSaveRecurring && (
+          <button
+            aria-label="Save as recurring"
+            onClick={() => onSaveRecurring({ name, calories, protein, carbs, fats })}
+            className="rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-yellow-500/10 hover:text-yellow-500 group-hover:opacity-100"
+            title="Save to Quick Add"
+          >
+            <Star size={14} />
           </button>
         )}
         {onDelete && (

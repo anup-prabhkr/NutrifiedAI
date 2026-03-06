@@ -5,6 +5,7 @@ import {
     setTokens,
     clearTokens,
     getAccessToken,
+    getRefreshToken,
     type UserData,
 } from '@/lib/api';
 
@@ -29,20 +30,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const profile = await profileApi.get();
             setUser(profile);
         } catch {
-            clearTokens();
+            // Don't clear tokens here — apiFetch already clears them and fires
+            // the 'auth:session-expired' event if the refresh token is invalid.
+            // For transient errors (network issues), we keep tokens so the user
+            // stays logged in and can retry.
             setUser(null);
         }
     }, []);
 
-    // Check for existing session on mount
+    // Check for existing session on mount — access OR refresh token is enough
     useEffect(() => {
-        const token = getAccessToken();
-        if (token) {
+        const hasSession = getAccessToken() || getRefreshToken();
+        if (hasSession) {
             refreshUser().finally(() => setIsLoading(false));
         } else {
             setIsLoading(false);
         }
     }, [refreshUser]);
+
+    // Listen for session expiry fired by apiFetch when refresh token is invalid
+    useEffect(() => {
+        const handleSessionExpired = () => {
+            setUser(null);
+        };
+        window.addEventListener('auth:session-expired', handleSessionExpired);
+        return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+    }, []);
 
     const login = async (email: string, password: string) => {
         const res = await authApi.login({ email, password });

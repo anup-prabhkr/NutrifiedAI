@@ -213,7 +213,7 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to add meal");
     }
-  }, []);
+  }, [selectedDate]);
 
   const deleteMeal = useCallback(async (id: string) => {
     try {
