@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { RefreshCw, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { RefreshCw, CalendarDays, ChevronLeft, ChevronRight, Zap, X, Plus } from "lucide-react";
 import ProgressRing from "@/components/ProgressRing";
 import NutrientBar from "@/components/NutrientBar";
 import MealItem from "@/components/MealItem";
@@ -8,10 +8,77 @@ import AppLayout from "@/components/AppLayout";
 import { useNutritionStore } from "@/hooks/useNutritionStore";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "sonner";
+
+export interface RecurringMeal {
+  id: string;
+  mealName: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+}
+
+const RECURRING_KEY = "nv_recurring_meals";
+
+function loadRecurringMeals(): RecurringMeal[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECURRING_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRecurringMeals(meals: RecurringMeal[]) {
+  localStorage.setItem(RECURRING_KEY, JSON.stringify(meals));
+}
 
 const Index: React.FC = () => {
   const { selectedDateMeals, totals, profile, macroTargets, addMeal, deleteMeal, updateMeal, selectedDate, setSelectedDate, today } = useNutritionStore();
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [recurringMeals, setRecurringMeals] = useState<RecurringMeal[]>(loadRecurringMeals);
+  const [showRecurringManager, setShowRecurringManager] = useState(false);
+
+  const handleSaveRecurring = useCallback((meal: { name: string; calories: number; protein: number; carbs: number; fats: number }) => {
+    setRecurringMeals((prev) => {
+      if (prev.some((m) => m.mealName.toLowerCase() === meal.name.toLowerCase())) {
+        toast.info(`"${meal.name}" is already in quick add`);
+        return prev;
+      }
+      const newMeal: RecurringMeal = {
+        id: Date.now().toString(),
+        mealName: meal.name,
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fats: meal.fats,
+      };
+      const updated = [...prev, newMeal];
+      saveRecurringMeals(updated);
+      toast.success(`"${meal.name}" saved to Quick Add`);
+      return updated;
+    });
+  }, []);
+
+  const handleRemoveRecurring = useCallback((id: string) => {
+    setRecurringMeals((prev) => {
+      const updated = prev.filter((m) => m.id !== id);
+      saveRecurringMeals(updated);
+      return updated;
+    });
+  }, []);
+
+  const handleQuickAdd = useCallback((meal: RecurringMeal) => {
+    addMeal({
+      mealName: meal.mealName,
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fats: meal.fats,
+      source: "manual",
+    });
+    toast.success(`"${meal.mealName}" added`);
+  }, [addMeal]);
 
   const remaining = profile.calorieTarget - totals.calories;
   const percent = Math.round((totals.calories / profile.calorieTarget) * 100);
@@ -189,6 +256,50 @@ const Index: React.FC = () => {
             <h2 className="mb-3 text-lg font-bold text-primary">
               {selectedDate === today ? "Today's Meals" : `${formatDateDisplay(selectedDate)}'s Meals`}
             </h2>
+
+            {/* Quick Add (Recurring Meals) */}
+            {recurringMeals.length > 0 && (
+              <div className="mb-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                    <Zap size={12} className="text-primary" /> Quick Add
+                  </span>
+                  <button
+                    onClick={() => setShowRecurringManager(!showRecurringManager)}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showRecurringManager ? "Done" : "Edit"}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {recurringMeals.map((meal) => (
+                    <button
+                      key={meal.id}
+                      onClick={() => showRecurringManager ? handleRemoveRecurring(meal.id) : handleQuickAdd(meal)}
+                      className={`group relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all active:scale-95 ${
+                        showRecurringManager
+                          ? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+                          : "bg-primary/10 text-primary hover:bg-primary/20"
+                      }`}
+                    >
+                      {showRecurringManager ? (
+                        <>
+                          <X size={12} />
+                          {meal.mealName}
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={12} />
+                          {meal.mealName}
+                          <span className="text-[10px] opacity-60">{meal.calories}cal</span>
+                        </>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {selectedDateMeals.length === 0 && (
               <p className="rounded-xl bg-secondary px-4 py-6 text-center text-sm text-muted-foreground">
                 {selectedDate === today 
@@ -199,7 +310,7 @@ const Index: React.FC = () => {
             <div className="flex flex-col gap-2">
               {selectedDateMeals.map((meal, i) => (
                 <div key={meal.id} className="animate-in fade-in slide-in-from-left-3 duration-300 fill-backwards" style={{ animationDelay: `${450 + i * 60}ms` }}>
-                  <MealItem {...meal} onDelete={deleteMeal} onUpdate={updateMeal} />
+                  <MealItem {...meal} onDelete={deleteMeal} onUpdate={updateMeal} onSaveRecurring={handleSaveRecurring} />
                 </div>
               ))}
             </div>
