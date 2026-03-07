@@ -64,4 +64,12 @@ export class UpdateProfileDto {
     @IsOptional()
     @IsString()
     name?: string;
+
+    @IsOptional()
+    @IsNumber()
+    targetWeight?: number;
+
+    @IsOptional()
+    @IsNumber()
+    weeklyWeightChange?: number;
 }

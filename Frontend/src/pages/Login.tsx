@@ -1,27 +1,48 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Flame, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { authApi } from '@/lib/api';
+import { Flame, Eye, EyeOff, Loader2, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Login: React.FC = () => {
-    const { login } = useAuth();
+    const { login, loginAsGuest } = useAuth();
     const navigate = useNavigate();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [resendLoading, setResendLoading] = useState(false);
+    const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+        setUnverifiedEmail(null);
         try {
             await login(email, password);
             navigate('/');
         } catch (err: any) {
-            toast.error(err.message || 'Login failed');
+            if (err.message === 'EMAIL_NOT_VERIFIED') {
+                setUnverifiedEmail(email);
+            } else {
+                toast.error(err.message || 'Login failed');
+            }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleResend = async () => {
+        if (!unverifiedEmail) return;
+        setResendLoading(true);
+        try {
+            await authApi.resendVerification(unverifiedEmail);
+            toast.success('Verification email sent!');
+        } catch {
+            toast.error('Failed to resend email. Please try again.');
+        } finally {
+            setResendLoading(false);
         }
     };
 
@@ -42,7 +63,26 @@ const Login: React.FC = () => {
                     <h2 className="mb-1 text-lg font-semibold text-foreground">Welcome back</h2>
                     <p className="mb-6 text-sm text-muted-foreground">Sign in to your account</p>
 
-                    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                {/* Unverified email notice */}
+                {unverifiedEmail && (
+                    <div className="mb-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm">
+                        <p className="font-medium text-yellow-400">Email not verified</p>
+                        <p className="mt-0.5 text-yellow-400/80">
+                            Please check your inbox for the verification link.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={handleResend}
+                            disabled={resendLoading}
+                            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary hover:underline disabled:opacity-50"
+                        >
+                            {resendLoading && <Loader2 size={12} className="animate-spin" />}
+                            Resend verification email
+                        </button>
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                         <div>
                             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
                                 Email
@@ -90,6 +130,24 @@ const Login: React.FC = () => {
                             Sign In
                         </button>
                     </form>
+
+                    <div className="mt-4 flex items-center gap-3">
+                        <div className="h-px flex-1 bg-border" />
+                        <span className="text-xs text-muted-foreground">or</span>
+                        <div className="h-px flex-1 bg-border" />
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => { loginAsGuest(); navigate('/'); }}
+                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-primary bg-primary/10 py-2.5 text-sm font-semibold text-primary transition-all hover:bg-primary/20 animate-pulse hover:animate-none"
+                    >
+                        <UserRound size={16} />
+                        Continue as Guest
+                    </button>
+                    <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                        No sign-up needed — data stays in your browser
+                    </p>
                 </div>
 
                 <p className="mt-6 text-center text-sm text-muted-foreground">

@@ -3,11 +3,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import Index from "./pages/Index";
 import Analytics from "./pages/Analytics";
 import Profile from "./pages/Profile";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import VerifyEmail from "./pages/VerifyEmail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +52,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <TooltipProvider>
       <Sonner />
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -58,6 +61,7 @@ const App = () => (
             {/* Public routes */}
             <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
             <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Protected routes */}
             <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
@@ -70,6 +74,7 @@ const App = () => (
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

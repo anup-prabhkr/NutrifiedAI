@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { Flame, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { authApi } from '@/lib/api';
+import { Flame, Eye, EyeOff, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Register: React.FC = () => {
-    const { register } = useAuth();
-    const navigate = useNavigate();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+    const [resendLoading, setResendLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,15 +24,71 @@ const Register: React.FC = () => {
 
         setLoading(true);
         try {
-            await register(name, email, password);
-            toast.success('Account created successfully!');
-            navigate('/');
+            const res = await authApi.register({ name, email, password });
+            setRegisteredEmail(res.email);
         } catch (err: any) {
             toast.error(err.message || 'Registration failed');
         } finally {
             setLoading(false);
         }
     };
+
+    const handleResend = async () => {
+        if (!registeredEmail) return;
+        setResendLoading(true);
+        try {
+            await authApi.resendVerification(registeredEmail);
+            toast.success('Verification email resent!');
+        } catch {
+            toast.error('Failed to resend email. Please try again.');
+        } finally {
+            setResendLoading(false);
+        }
+    };
+
+    if (registeredEmail) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-background px-4">
+                <div className="w-full max-w-sm">
+                    <div className="mb-8 flex flex-col items-center">
+                        <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/25">
+                            <Flame size={32} className="text-primary-foreground" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-foreground">NutrifiedAI</h1>
+                    </div>
+                    <div className="glass-card p-6 text-center">
+                        <div className="mb-4 flex justify-center">
+                            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15">
+                                <Mail size={28} className="text-primary" />
+                            </div>
+                        </div>
+                        <h2 className="mb-2 text-lg font-semibold text-foreground">Check your email</h2>
+                        <p className="mb-1 text-sm text-muted-foreground">
+                            We sent a verification link to
+                        </p>
+                        <p className="mb-5 text-sm font-medium text-foreground">{registeredEmail}</p>
+                        <p className="mb-6 text-xs text-muted-foreground">
+                            Click the link in the email to activate your account. The link expires in 24 hours.
+                        </p>
+                        <button
+                            onClick={handleResend}
+                            disabled={resendLoading}
+                            className="flex w-full items-center justify-center gap-2 rounded-lg border border-border py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary disabled:opacity-50"
+                        >
+                            {resendLoading && <Loader2 size={14} className="animate-spin" />}
+                            Resend verification email
+                        </button>
+                    </div>
+                    <p className="mt-6 text-center text-sm text-muted-foreground">
+                        Already verified?{' '}
+                        <Link to="/login" className="font-medium text-primary hover:underline">
+                            Sign in
+                        </Link>
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-background px-4">

@@ -10,12 +10,13 @@ interface MealItemProps {
   carbs: number;
   fats: number;
   source: "ai" | "manual";
+  imageUrl?: string;
   onDelete?: (id: string) => void;
   onUpdate?: (id: string, updates: { mealName?: string; calories?: number; protein?: number; carbs?: number; fats?: number }) => void;
   onSaveRecurring?: (meal: { name: string; calories: number; protein: number; carbs: number; fats: number }) => void;
 }
 
-const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, carbs, fats, source, onDelete, onUpdate, onSaveRecurring }) => {
+const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, carbs, fats, source, imageUrl, onDelete, onUpdate, onSaveRecurring }) => {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name, calories, protein, carbs, fats });
 
@@ -76,36 +77,36 @@ const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, 
   }
 
   return (
-    <div className="flex items-center justify-between rounded-xl bg-secondary px-4 py-3 group transition-all duration-200 hover:bg-secondary/80 hover:shadow-md">
-      <div className="flex flex-col">
-        <span className="text-sm font-semibold text-foreground">{name}</span>
-        <span className="text-xs text-muted-foreground">{time}</span>
-        {source === "ai" && (
-          <span className="mt-0.5 text-[10px] font-medium text-primary">AI Detected</span>
-        )}
+    <div className="flex items-center gap-3 rounded-xl bg-secondary px-4 py-3 group transition-all duration-200 hover:bg-secondary/80 hover:shadow-md">
+      {/* Left: info */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="text-sm font-semibold text-foreground truncate">{name}</span>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-foreground">{calories} kcal</span>
+          <span className="text-nblue">P {protein}g</span>
+          <span className="text-emerald">C {carbs}g</span>
+          <span className="text-npink">F {fats}g</span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <span>{time}</span>
+          {source === "ai" && <span className="font-medium text-primary">· AI</span>}
+        </div>
       </div>
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="flex flex-col items-center transition-transform duration-200 group-hover:scale-105">
-          <span className="font-semibold text-foreground">{calories}</span>
-          <span>kcal</span>
+
+      {/* Right: thumbnail  */}
+      {imageUrl && (
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg">
+          <img src={imageUrl} alt={name} className="h-full w-full object-cover" />
         </div>
-        <div className="flex flex-col items-center transition-transform duration-200 group-hover:scale-105">
-          <span className="font-semibold text-nblue">{protein}g</span>
-          <span>P</span>
-        </div>
-        <div className="flex flex-col items-center transition-transform duration-200 group-hover:scale-105">
-          <span className="font-semibold text-emerald">{carbs}g</span>
-          <span>C</span>
-        </div>
-        <div className="flex flex-col items-center transition-transform duration-200 group-hover:scale-105">
-          <span className="font-semibold text-npink">{fats}g</span>
-          <span>F</span>
-        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex shrink-0 items-center gap-0.5">
         {onUpdate && (
           <button
             aria-label="Edit meal"
             onClick={() => setEditing(true)}
-            className="ml-1 rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
+            className="rounded-lg p-1.5 text-muted-foreground transition-all hover:bg-primary/10 hover:text-primary"
           >
             <Edit3 size={14} />
           </button>
@@ -114,7 +115,7 @@ const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, 
           <button
             aria-label="Save as recurring"
             onClick={() => onSaveRecurring({ name, calories, protein, carbs, fats })}
-            className="rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-yellow-500/10 hover:text-yellow-500 group-hover:opacity-100"
+            className="rounded-lg p-1.5 text-muted-foreground transition-all hover:bg-yellow-500/10 hover:text-yellow-500"
             title="Save to Quick Add"
           >
             <Star size={14} />
@@ -123,8 +124,10 @@ const MealItem: React.FC<MealItemProps> = ({ id, name, time, calories, protein, 
         {onDelete && (
           <button
             aria-label="Delete meal"
-            onClick={() => onDelete(id)}
-            className="rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+            onClick={() => {
+              if (window.confirm(`Delete "${name}"?`)) onDelete(id);
+            }}
+            className="rounded-lg p-1.5 text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive"
           >
             <Trash2 size={14} />
           </button>

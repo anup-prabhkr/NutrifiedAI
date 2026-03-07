@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Ruler, Weight, Calendar, UserRound, Activity, Target, Flame, Edit3, Check, Percent, LogOut, AlertTriangle, Camera } from "lucide-react";
+import { Ruler, Weight, Calendar, UserRound, Activity, Target, Flame, Edit3, Check, Percent, LogOut, AlertTriangle, Camera, Mail, Lock, Eye, EyeOff, Loader2, Trash2, TrendingDown, TrendingUp, Sun, Moon } from "lucide-react";
 import AppLayout from "@/components/AppLayout";
 import { useNutritionStore } from "@/hooks/useNutritionStore";
 import { useAuth } from "@/contexts/AuthContext";
+import { authApi } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const goalOptions = ["Maintain", "Lean Bulk", "Aggressive Bulk", "Cut"];
 const activityOptions = ["Sedentary", "Lightly Active", "Moderately Active", "Very Active", "Extremely Active"];
@@ -13,16 +16,17 @@ const genderOptions = ["Male", "Female", "Other"];
 function calculateCalorieTarget(p: {
   height: string; weight: string; age: string; gender: string;
   activity: string; goal: string; bodyFat: string;
-}): { calorieTarget: number; protein: number; carbs: number; fats: number } {
+  targetWeight?: string; weeklyWeightChange?: string;
+}): { calorieTarget: number; protein: number; carbs: number; fats: number; estimatedWeeks: number | null } {
   const h = parseFloat(p.height); // cm
   const w = parseFloat(p.weight); // kg
   const a = parseInt(p.age);
-  const bf = parseFloat(p.bodyFat) || 0;
-  if (!h || h <= 0 || !w || w <= 0 || !a || a <= 0) return { calorieTarget: 0, protein: 0, carbs: 0, fats: 0 };
+  const bf = parseFloat(p.bodyFat);
+  if (!h || h <= 0 || !w || w <= 0 || !a || a <= 0) return { calorieTarget: 0, protein: 0, carbs: 0, fats: 0, estimatedWeeks: null };
 
   // BMR
   let bmr: number;
-  if (bf > 0 && bf >= 3 && bf <= 60) {
+  if (!isNaN(bf) && bf >= 3 && bf <= 60) {
     // Katch-McArdle
     const leanBodyMass = w * (1 - bf / 100);
     bmr = 370 + (21.6 * leanBodyMass);
@@ -45,16 +49,41 @@ function calculateCalorieTarget(p: {
   };
   const tdee = bmr * (activityMultiplier[p.activity] || 1.2);
 
-  // Goal adjustment
-  let calories: number;
+  // Determine weekly weight change (kg/week)
   const goalLower = p.goal.toLowerCase();
+  const parsedWeeklyChange = parseFloat(p.weeklyWeightChange ?? "");
+  let weeklyChange: number;
+  if (!isNaN(parsedWeeklyChange) && parsedWeeklyChange >= 0) {
+    weeklyChange = parsedWeeklyChange;
+  } else {
+    // Goal-based defaults
+    switch (goalLower) {
+      case "lean bulk": weeklyChange = 0.25; break;
+      case "aggressive bulk": weeklyChange = 0.5; break;
+      case "cut": weeklyChange = 0.5; break;
+      default: weeklyChange = 0; break; // Maintain
+    }
+  }
+
+  // Convert weekly weight change to daily calorie adjustment (1 kg ≈ 7700 kcal)
+  const dailyCalorieAdjustment = (weeklyChange * 7700) / 7;
+
+  // Goal-based calorie adjustment
+  let calories: number;
   switch (goalLower) {
-    case "cut": calories = tdee - 400; break;
-    case "lean bulk": calories = tdee + 250; break;
-    case "aggressive bulk": calories = tdee + 450; break;
-    default: calories = tdee; // Maintain
+    case "cut": calories = tdee - dailyCalorieAdjustment; break;
+    case "lean bulk":
+    case "aggressive bulk": calories = tdee + dailyCalorieAdjustment; break;
+    default: calories = tdee; break; // Maintain
   }
   const calorieTarget = Math.max(1200, Math.round(calories));
+
+  // Estimated weeks to reach target weight
+  const tw = parseFloat(p.targetWeight ?? "");
+  let estimatedWeeks: number | null = null;
+  if (!isNaN(tw) && tw > 0 && weeklyChange > 0) {
+    estimatedWeeks = Math.ceil(Math.abs(tw - w) / weeklyChange);
+  }
 
   // Macros
   let proteinGrams: number;
@@ -69,7 +98,7 @@ function calculateCalorieTarget(p: {
   const remainingCalories = calorieTarget - (proteinGrams * 4 + fatCalories);
   const carbGrams = remainingCalories > 0 ? Math.round(remainingCalories / 4) : 0;
 
-  return { calorieTarget, protein: proteinGrams, carbs: carbGrams, fats: fatGrams };
+  return { calorieTarget, protein: proteinGrams, carbs: carbGrams, fats: fatGrams, estimatedWeeks };
 }
 
 function calculateBmi(height: string, weight: string): { bmi: number; category: string } | null {
@@ -87,7 +116,7 @@ function calculateBmi(height: string, weight: string): { bmi: number; category: 
 }
 
 const Profile: React.FC = () => {
-  const { profile, macroTargets, updateProfile } = useNutritionStore();
+  const { profile, macroTargets, updateProfile, loading } = useNutritionStore();
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
@@ -251,7 +280,12 @@ const Profile: React.FC = () => {
   // Recalculate calorie target whenever relevant body-stat fields change
   useEffect(() => {
     if (!editing || manualMacros) return;
-    const computed = calculateCalorieTarget({ ...form, bodyFat: form.bodyFat || "0" });
+    const computed = calculateCalorieTarget({
+      ...form,
+      bodyFat: form.bodyFat || "0",
+      targetWeight: String(form.targetWeight ?? ""),
+      weeklyWeightChange: String(form.weeklyWeightChange ?? ""),
+    });
     if (computed.calorieTarget > 0) {
       setForm((prev) => ({
         ...prev,
@@ -260,7 +294,7 @@ const Profile: React.FC = () => {
       }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, manualMacros, form.height, form.weight, form.age, form.gender, form.activity, form.goal, form.bodyFat]);
+  }, [editing, manualMacros, form.height, form.weight, form.age, form.gender, form.activity, form.goal, form.bodyFat, form.weeklyWeightChange, form.targetWeight]);
 
   const bmiInfo = calculateBmi(editing ? form.height : profile.height, editing ? form.weight : profile.weight);
 
@@ -305,7 +339,32 @@ const Profile: React.FC = () => {
 
   return (
     <AppLayout>
-      <div className="mb-6 flex items-center justify-between">
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="h-7 w-24 rounded-lg bg-secondary" />
+            <div className="h-8 w-16 rounded-lg bg-secondary" />
+          </div>
+          <div className="glass-card flex items-center gap-5 p-5">
+            <div className="h-20 w-20 rounded-full bg-secondary" />
+            <div className="flex-1 space-y-2">
+              <div className="h-5 w-32 rounded bg-secondary" />
+              <div className="h-3 w-48 rounded bg-secondary" />
+              <div className="h-3 w-40 rounded bg-secondary" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg bg-secondary px-4 py-3">
+                <div className="h-4 w-20 rounded bg-muted" />
+                <div className="h-4 w-16 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+      <>
+      <div className="mb-6 flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-500">
         <h1 className="text-2xl font-bold text-primary lg:text-foreground">Profile</h1>
         <button
           onClick={() => editing ? handleCancel() : setEditing(true)}
@@ -316,7 +375,7 @@ const Profile: React.FC = () => {
         </button>
       </div>
 
-      <div className="lg:grid lg:grid-cols-2 lg:gap-6">
+      <div className="lg:grid lg:grid-cols-2 lg:gap-6 animate-in fade-in slide-in-from-bottom-3 duration-500 delay-100 fill-backwards">
         {/* Left column */}
         <div>
           {/* Profile Card */}
@@ -367,6 +426,14 @@ const Profile: React.FC = () => {
               </p>
             </div>
           </div>
+
+          {/* Appearance (mobile) */}
+          <div className="mb-6 lg:hidden">
+            <ThemeToggle />
+          </div>
+
+          {/* Account Settings */}
+          <AccountSettings userEmail={user?.email || ""} />
 
           {/* Body Stats */}
           <div className="mb-6">
@@ -530,6 +597,62 @@ const Profile: React.FC = () => {
                   </button>
                 </div>
               )}
+
+              {/* Target Weight (visible for Cut/Bulk goals) */}
+              {(() => {
+                const g = (editing ? form.goal : profile.goal).toLowerCase();
+                const showTarget = g === "cut" || g.includes("bulk");
+                if (!showTarget) return null;
+                return (
+                  <>
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {g === "cut" ? <TrendingDown size={16} className="text-muted-foreground" /> : <TrendingUp size={16} className="text-muted-foreground" />}
+                        <span className="text-sm text-foreground">Target Weight</span>
+                      </div>
+                      {editing ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            placeholder="e.g. 70"
+                            value={form.targetWeight ?? ""}
+                            onChange={(e) => setForm({ ...form, targetWeight: e.target.value === "" ? undefined : Number(e.target.value) })}
+                            className="w-20 rounded bg-secondary px-2 py-1 text-right text-sm font-semibold text-foreground outline-none"
+                          />
+                          <span className="text-xs text-muted-foreground">{unitSystem === "imperial" ? "lbs" : "kg"}</span>
+                        </div>
+                      ) : (
+                        <span className="text-sm font-semibold text-foreground">
+                          {profile.targetWeight ? `${profile.targetWeight} ${unitSystem === "imperial" ? "lbs" : "kg"}` : "—"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <Activity size={16} className="text-muted-foreground" />
+                        <span className="text-sm text-foreground">Weekly Change</span>
+                      </div>
+                      {editing ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            step="0.1"
+                            placeholder={g === "lean bulk" ? "0.25" : "0.5"}
+                            value={form.weeklyWeightChange ?? ""}
+                            onChange={(e) => setForm({ ...form, weeklyWeightChange: e.target.value === "" ? undefined : Number(e.target.value) })}
+                            className="w-20 rounded bg-secondary px-2 py-1 text-right text-sm font-semibold text-foreground outline-none"
+                          />
+                          <span className="text-xs text-muted-foreground">kg/wk</span>
+                        </div>
+                      ) : (
+                        <span className="text-sm font-semibold text-foreground">
+                          {profile.weeklyWeightChange ? `${profile.weeklyWeightChange} kg/wk` : `${g === "lean bulk" ? "0.25" : "0.5"} kg/wk`}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -667,7 +790,316 @@ const Profile: React.FC = () => {
           Sign Out
         </button>
       </div>
+
+      {/* Delete Account */}
+      <DeleteAccountSection />
+      </>
+      )}
     </AppLayout>
+  );
+};
+
+// ── Account Settings (Change Email & Password) ─────────────
+const AccountSettings: React.FC<{ userEmail: string }> = ({ userEmail }) => {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  // Change Email state
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  // Change Password state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+
+  const handleChangeEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailLoading(true);
+    try {
+      const res = await authApi.changeEmail({ newEmail, password: emailPassword });
+      toast.success(res.message);
+      setShowEmailForm(false);
+      setNewEmail("");
+      setEmailPassword("");
+      // Email changed & unverified — log user out so they must re-verify
+      await logout();
+      navigate("/login");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to change email");
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmNewPassword) {
+      toast.error("New passwords do not match");
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      const res = await authApi.changePassword({ currentPassword, newPassword });
+      toast.success(res.message);
+      setShowPasswordForm(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to change password");
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        Account Settings
+      </h3>
+      <div className="glass-card divide-y divide-border">
+        {/* Change Email */}
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Mail size={16} className="text-muted-foreground" />
+              <div>
+                <span className="text-sm text-foreground">Email</span>
+                <p className="text-xs text-muted-foreground">{userEmail}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { setShowEmailForm(!showEmailForm); setShowPasswordForm(false); }}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              {showEmailForm ? "Cancel" : "Change"}
+            </button>
+          </div>
+          {showEmailForm && (
+            <form onSubmit={handleChangeEmail} className="mt-3 flex flex-col gap-2.5">
+              <input
+                type="email"
+                placeholder="New email address"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                required
+                className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <input
+                type="password"
+                placeholder="Confirm your password"
+                value={emailPassword}
+                onChange={(e) => setEmailPassword(e.target.value)}
+                required
+                className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                You'll need to verify the new email address. You will be signed out.
+              </p>
+              <button
+                type="submit"
+                disabled={emailLoading}
+                className="flex items-center justify-center gap-2 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {emailLoading && <Loader2 size={14} className="animate-spin" />}
+                Update Email
+              </button>
+            </form>
+          )}
+        </div>
+
+        {/* Change Password */}
+        <div className="px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Lock size={16} className="text-muted-foreground" />
+              <div>
+                <span className="text-sm text-foreground">Password</span>
+                <p className="text-xs text-muted-foreground">••••••••</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { setShowPasswordForm(!showPasswordForm); setShowEmailForm(false); }}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              {showPasswordForm ? "Cancel" : "Change"}
+            </button>
+          </div>
+          {showPasswordForm && (
+            <form onSubmit={handleChangePassword} className="mt-3 flex flex-col gap-2.5">
+              <div className="relative">
+                <input
+                  type={showCurrent ? "text" : "password"}
+                  placeholder="Current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  className="w-full rounded-lg bg-secondary px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showCurrent ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showNew ? "text" : "password"}
+                  placeholder="New password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full rounded-lg bg-secondary px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {showNew ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <input
+                type="password"
+                placeholder="Confirm new password"
+                value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                type="submit"
+                disabled={passwordLoading}
+                className="flex items-center justify-center gap-2 rounded-lg bg-primary py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              >
+                {passwordLoading && <Loader2 size={14} className="animate-spin" />}
+                Update Password
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Delete Account Section ─────────────────────────────────
+const DeleteAccountSection: React.FC = () => {
+  const { logout, isGuest } = useAuth();
+  const navigate = useNavigate();
+  const [confirmStep, setConfirmStep] = useState(0); // 0=hidden, 1=first confirm, 2=type-confirm
+  const [confirmText, setConfirmText] = useState("");
+  const [delLoading, setDelLoading] = useState(false);
+
+  const handleDelete = async () => {
+    if (isGuest) {
+      // Guest: clear all local data
+      Object.keys(localStorage).forEach((k) => { if (k.startsWith("nv_guest_") || k === "nv_guest_mode") localStorage.removeItem(k); });
+      await logout();
+      navigate("/login");
+      return;
+    }
+    setDelLoading(true);
+    try {
+      await authApi.deleteAccount();
+      toast.success("Account deleted successfully");
+      await logout();
+      navigate("/login");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete account");
+    } finally {
+      setDelLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 mb-8">
+      <h3 className="mb-3 text-[10px] font-bold uppercase tracking-widest text-destructive">
+        Danger Zone
+      </h3>
+      <div className="glass-card border border-destructive/20 p-4">
+        {confirmStep === 0 && (
+          <button
+            onClick={() => setConfirmStep(1)}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-destructive/30 py-2.5 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10"
+          >
+            <Trash2 size={16} />
+            Delete Account
+          </button>
+        )}
+        {confirmStep === 1 && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-destructive" />
+              <p className="text-xs text-destructive">
+                This will permanently delete your account and <strong>all</strong> your data (meals, weight logs, supplements, profile). This action cannot be undone.
+              </p>
+            </div>
+            {isGuest ? (
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmStep(0)} className="flex-1 rounded-lg bg-secondary py-2 text-xs font-medium text-muted-foreground">
+                  Cancel
+                </button>
+                <button onClick={handleDelete} className="flex-1 rounded-lg bg-destructive py-2 text-xs font-semibold text-destructive-foreground">
+                  Yes, Clear All Data
+                </button>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Type <strong className="text-foreground">DELETE</strong> to confirm:
+                </p>
+                <input
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  className="w-full rounded-lg bg-secondary px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-destructive/30"
+                />
+                <div className="flex gap-2">
+                  <button onClick={() => { setConfirmStep(0); setConfirmText(""); }} className="flex-1 rounded-lg bg-secondary py-2 text-xs font-medium text-muted-foreground">
+                    Cancel
+                  </button>
+                  <button
+                    disabled={confirmText !== "DELETE" || delLoading}
+                    onClick={handleDelete}
+                    className="flex-1 rounded-lg bg-destructive py-2 text-xs font-semibold text-destructive-foreground disabled:opacity-50"
+                  >
+                    {delLoading ? <Loader2 size={14} className="mx-auto animate-spin" /> : "Permanently Delete"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Theme Toggle (Mobile) ──────────────────────────────────
+const ThemeToggle: React.FC = () => {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <div className="rounded-2xl bg-card p-4 shadow-sm border border-border">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {theme === "dark" ? <Moon size={18} className="text-primary" /> : <Sun size={18} className="text-primary" />}
+          <div>
+            <p className="text-sm font-semibold text-foreground">Appearance</p>
+            <p className="text-xs text-muted-foreground">{theme === "dark" ? "Dark" : "Light"} mode</p>
+          </div>
+        </div>
+        <button
+          onClick={toggleTheme}
+          className="rounded-lg bg-secondary px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-secondary/80"
+        >
+          {theme === "dark" ? "Light" : "Dark"}
+        </button>
+      </div>
+    </div>
   );
 };
 

@@ -12,5 +12,6 @@ import { SupplementsService } from './supplements.service';
     ],
     controllers: [SupplementsController],
     providers: [SupplementsService],
+    exports: [SupplementsService],
 })
 export class SupplementsModule { }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { RefreshCw, CalendarDays, ChevronLeft, ChevronRight, Zap, X, Plus } from "lucide-react";
+import { RefreshCw, CalendarDays, ChevronLeft, ChevronRight, Zap, X, Plus, Minus, Settings, GlassWater, Star } from "lucide-react";
 import ProgressRing from "@/components/ProgressRing";
 import NutrientBar from "@/components/NutrientBar";
 import MealItem from "@/components/MealItem";
@@ -34,10 +34,12 @@ function saveRecurringMeals(meals: RecurringMeal[]) {
 }
 
 const Index: React.FC = () => {
-  const { selectedDateMeals, totals, profile, macroTargets, addMeal, deleteMeal, updateMeal, selectedDate, setSelectedDate, today } = useNutritionStore();
+  const { selectedDateMeals, totals, profile, macroTargets, addMeal, deleteMeal, updateMeal, selectedDate, setSelectedDate, today, loading, todayWater, addWater, waterCupSize, setWaterCupSize } = useNutritionStore();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [recurringMeals, setRecurringMeals] = useState<RecurringMeal[]>(loadRecurringMeals);
   const [showRecurringManager, setShowRecurringManager] = useState(false);
+  const [showWaterSettings, setShowWaterSettings] = useState(false);
+  const [cupSizeInput, setCupSizeInput] = useState(String(waterCupSize));
 
   const handleSaveRecurring = useCallback((meal: { name: string; calories: number; protein: number; carbs: number; fats: number }) => {
     setRecurringMeals((prev) => {
@@ -125,6 +127,34 @@ const Index: React.FC = () => {
 
   return (
     <AppLayout>
+      {loading ? (
+        <div className="animate-pulse space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="h-6 w-32 rounded-lg bg-secondary" />
+            <div className="h-8 w-8 rounded-lg bg-secondary" />
+          </div>
+          <div className="flex gap-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="h-16 flex-1 rounded-xl bg-secondary" />
+            ))}
+          </div>
+          <div className="flex flex-col items-center gap-4 py-6">
+            <div className="h-40 w-40 rounded-full bg-secondary" />
+            <div className="h-4 w-48 rounded bg-secondary" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-xl bg-secondary" />
+            ))}
+          </div>
+          <div className="space-y-3 pt-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-xl bg-secondary" />
+            ))}
+          </div>
+        </div>
+      ) : (
+      <>
       {/* Header */}
       <div className="mb-4 flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-500">
         <div>
@@ -218,9 +248,13 @@ const Index: React.FC = () => {
               unit="kcal"
             />
             <p className="mt-3 text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{Math.max(remaining, 0)}</span> kcal remaining
+              {remaining >= 0 ? (
+                <><span className="font-semibold text-foreground">{remaining}</span> kcal remaining</>
+              ) : (
+                <><span className="font-semibold text-destructive">{Math.abs(remaining)}</span> kcal over</>
+              )}
             </p>
-            <p className="text-xs text-muted-foreground">{Math.min(percent, 100)}% of daily goal</p>
+            <p className={`text-xs ${percent > 100 ? "font-medium text-destructive" : "text-muted-foreground"}`}>{percent}% of daily goal</p>
           </div>
 
           {/* Macro Rings */}
@@ -247,30 +281,86 @@ const Index: React.FC = () => {
             <NutrientBar label="Sugar" value={Math.round(totals.carbs * 0.3)} max={50} color="emerald" />
             <NutrientBar label="Fiber" value={Math.round(totals.carbs * 0.15)} max={30} color="emerald" />
           </div>
+
+          {/* Water Tracker */}
+          <div className="glass-card mb-4 p-4 animate-in fade-in slide-in-from-bottom-3 duration-500 fill-backwards" style={{ animationDelay: '350ms' }}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15">
+                  <GlassWater size={24} className="text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Water</p>
+                  <p className="text-xs text-muted-foreground">{todayWater} ml</p>
+                </div>
+                <button
+                  title="Water settings"
+                  onClick={() => setShowWaterSettings(!showWaterSettings)}
+                  className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Settings size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => addWater(-waterCupSize)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+                >
+                  <Minus size={18} />
+                </button>
+                <button
+                  onClick={() => addWater(waterCupSize)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-foreground text-foreground transition-colors hover:border-primary hover:bg-primary/10"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+            </div>
+            {showWaterSettings && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg bg-secondary p-2">
+                <span className="text-xs text-muted-foreground">Cup size:</span>
+                <input
+                  type="number"
+                  value={cupSizeInput}
+                  onChange={(e) => setCupSizeInput(e.target.value)}
+                  onBlur={() => { const v = parseInt(cupSizeInput); if (v > 0) setWaterCupSize(v); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { const v = parseInt(cupSizeInput); if (v > 0) { setWaterCupSize(v); setShowWaterSettings(false); } } }}
+                  className="w-20 rounded bg-muted px-2 py-1 text-xs text-foreground outline-none"
+                />
+                <span className="text-xs text-muted-foreground">ml</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right column */}
         <div>
           {/* Today's Meals */}
-          <div className="mb-4 animate-in fade-in slide-in-from-bottom-3 duration-500 delay-[400ms] fill-backwards">
+          <div className="mb-4 animate-in fade-in slide-in-from-bottom-3 duration-500 fill-backwards" style={{ animationDelay: '400ms' }}>
             <h2 className="mb-3 text-lg font-bold text-primary">
               {selectedDate === today ? "Today's Meals" : `${formatDateDisplay(selectedDate)}'s Meals`}
             </h2>
 
             {/* Quick Add (Recurring Meals) */}
-            {recurringMeals.length > 0 && (
-              <div className="mb-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                    <Zap size={12} className="text-primary" /> Quick Add
-                  </span>
+            <div className="mb-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                  <Zap size={12} className="text-primary" /> Quick Add
+                </span>
+                {recurringMeals.length > 0 && (
                   <button
                     onClick={() => setShowRecurringManager(!showRecurringManager)}
                     className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {showRecurringManager ? "Done" : "Edit"}
                   </button>
-                </div>
+                )}
+              </div>
+              {recurringMeals.length === 0 ? (
+                <p className="rounded-lg bg-secondary/50 px-3 py-3 text-center text-xs text-muted-foreground">
+                  No quick meals yet. Tap the <span className="inline-flex align-text-bottom"><Star size={12} className="text-yellow-500" /></span> button on any meal to save it here for quick logging.
+                </p>
+              ) : (
                 <div className="flex flex-wrap gap-2">
                   {recurringMeals.map((meal) => (
                     <button
@@ -297,8 +387,8 @@ const Index: React.FC = () => {
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {selectedDateMeals.length === 0 && (
               <p className="rounded-xl bg-secondary px-4 py-6 text-center text-sm text-muted-foreground">
@@ -319,6 +409,8 @@ const Index: React.FC = () => {
       </div>
 
       <AddMealDialog onAdd={addMeal} />
+      </>
+      )}
     </AppLayout>
   );
 };

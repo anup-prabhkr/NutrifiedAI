@@ -16,7 +16,7 @@ export class SupplementsService {
     ): Promise<SupplementDocument> {
         const existing = await this.supplementModel.findOne({
             userId: new Types.ObjectId(userId),
-            name: { $regex: new RegExp(`^${data.name}$`, 'i') },
+            name: { $regex: new RegExp(`^${data.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
         });
         if (existing) {
             throw new ConflictException('Supplement already exists');
@@ -78,5 +78,9 @@ export class SupplementsService {
                 { new: true },
             )
             .exec();
+    }
+
+    async deleteAllForUser(userId: string): Promise<void> {
+        await this.supplementModel.deleteMany({ userId: new Types.ObjectId(userId) }).exec();
     }
 }

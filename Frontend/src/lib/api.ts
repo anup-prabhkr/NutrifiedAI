@@ -112,6 +112,11 @@ export interface AuthResponse {
     refreshToken: string;
 }
 
+export interface RegisterResponse {
+    message: string;
+    email: string;
+}
+
 export interface UserData {
     id: string;
     name: string;
@@ -135,7 +140,7 @@ export interface UserData {
 
 export const authApi = {
     register: (data: { name: string; email: string; password: string }) =>
-        apiFetch<AuthResponse>('/auth/register', {
+        apiFetch<RegisterResponse>('/auth/register', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
@@ -146,8 +151,34 @@ export const authApi = {
             body: JSON.stringify(data),
         }),
 
+    verifyEmail: (token: string) =>
+        apiFetch<AuthResponse>(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+
+    resendVerification: (email: string) =>
+        apiFetch<{ message: string }>('/auth/resend-verification', {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        }),
+
     logout: () =>
         apiFetch('/auth/logout', { method: 'POST' }),
+
+    changePassword: (data: { currentPassword: string; newPassword: string }) =>
+        apiFetch<{ message: string }>('/auth/change-password', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    changeEmail: (data: { newEmail: string; password: string }) =>
+        apiFetch<{ message: string }>('/auth/change-email', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+
+    deleteAccount: () =>
+        apiFetch<{ message: string }>('/auth/delete-account', {
+            method: 'DELETE',
+        }),
 };
 
 // ─── Profile ───────────────────────────────────────────────

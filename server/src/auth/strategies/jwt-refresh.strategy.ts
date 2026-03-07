@@ -10,7 +10,7 @@ export class JwtRefreshStrategy extends PassportStrategy(Strategy, 'jwt-refresh'
         super({
             jwtFromRequest: ExtractJwt.fromBodyField('refreshToken'),
             ignoreExpiration: false,
-            secretOrKey: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
+            secretOrKey: process.env.JWT_REFRESH_SECRET || (() => { if (process.env.NODE_ENV === 'production') throw new Error('JWT_REFRESH_SECRET must be set in production'); return 'dev-refresh-secret'; })(),
             passReqToCallback: true,
         });
     }

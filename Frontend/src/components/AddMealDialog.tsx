@@ -324,7 +324,12 @@ const AddMealDialog: React.FC<AddMealDialogProps> = ({ onAdd }) => {
                 {analysisResult.items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between text-xs py-1 animate-in fade-in slide-in-from-left-2 duration-300 fill-backwards" style={{ animationDelay: `${250 + i * 50}ms` }}>
                     <span className="text-foreground">{item.name}<span className="text-muted-foreground ml-1">({item.portion})</span></span>
-                    <span className="text-muted-foreground">{item.calories} kcal</span>
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <span>{item.calories} kcal</span>
+                      <span className="text-nblue">P{item.protein}g</span>
+                      <span className="text-emerald">C{item.carbs}g</span>
+                      <span className="text-npink">F{item.fats}g</span>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -354,7 +359,6 @@ const AddMealDialog: React.FC<AddMealDialogProps> = ({ onAdd }) => {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   aria-label="Select meal photo"
                   onChange={handleImageSelect}
                   className="hidden"

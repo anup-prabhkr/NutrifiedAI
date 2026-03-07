@@ -1,7 +1,10 @@
 import {
     Controller,
     Post,
+    Get,
+    Delete,
     Body,
+    Query,
     UseGuards,
     HttpCode,
     HttpStatus,
@@ -31,6 +34,19 @@ export class AuthController {
     }
 
     @Public()
+    @Get('verify-email')
+    async verifyEmail(@Query('token') token: string) {
+        return this.authService.verifyEmail(token);
+    }
+
+    @Public()
+    @Post('resend-verification')
+    @HttpCode(HttpStatus.OK)
+    async resendVerification(@Body('email') email: string) {
+        return this.authService.resendVerification(email);
+    }
+
+    @Public()
     @UseGuards(AuthGuard('jwt-refresh'))
     @Post('refresh')
     @HttpCode(HttpStatus.OK)
@@ -45,4 +61,29 @@ export class AuthController {
     async logout(@CurrentUser() user: { userId: string }) {
         return this.authService.logout(user.userId);
     }
+
+    @Post('change-password')
+    @HttpCode(HttpStatus.OK)
+    async changePassword(
+        @CurrentUser() user: { userId: string },
+        @Body() body: { currentPassword: string; newPassword: string },
+    ) {
+        return this.authService.changePassword(user.userId, body.currentPassword, body.newPassword);
+    }
+
+    @Post('change-email')
+    @HttpCode(HttpStatus.OK)
+    async changeEmail(
+        @CurrentUser() user: { userId: string },
+        @Body() body: { newEmail: string; password: string },
+    ) {
+        return this.authService.changeEmail(user.userId, body.newEmail, body.password);
+    }
+
+    @Delete('delete-account')
+    @HttpCode(HttpStatus.OK)
+    async deleteAccount(@CurrentUser() user: { userId: string }) {
+        return this.authService.deleteAccount(user.userId);
+    }
 }
+
