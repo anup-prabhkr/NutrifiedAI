@@ -2,10 +2,16 @@ import {
     Injectable,
     ConflictException,
     UnauthorizedException,
+    BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
+import { MailerService } from '../mailer/mailer.service';
+import { MealsService } from '../meals/meals.service';
+import { WeightService } from '../weight/weight.service';
+import { SupplementsService } from '../supplements/supplements.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -14,6 +20,10 @@ export class AuthService {
     constructor(
         private usersService: UsersService,
         private jwtService: JwtService,
+        private mailerService: MailerService,
+        private mealsService: MealsService,
+        private weightService: WeightService,
+        private supplementsService: SupplementsService,
     ) { }
 
     async register(dto: RegisterDto) {
@@ -28,6 +38,37 @@ export class AuthService {
             email: dto.email,
             passwordHash,
         });
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        await this.usersService.setEmailVerificationToken(
+            user._id.toString(),
+            verificationToken,
+            expiry,
+        );
+
+        await this.mailerService.sendVerificationEmail(user.email, verificationToken);
+
+        return {
+            message: 'Registration successful. Please check your email to verify your account.',
+            email: user.email,
+        };
+    }
+
+    async login(dto: LoginDto) {
+        const user = await this.usersService.findByEmail(dto.email);
+        if (!user) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
+        if (!passwordValid) {
+            throw new UnauthorizedException('Invalid credentials');
+        }
+
+        if (!user.isEmailVerified) {
+            throw new UnauthorizedException('EMAIL_NOT_VERIFIED');
+        }
 
         const tokens = await this.generateTokens(
             user._id.toString(),
@@ -47,21 +88,19 @@ export class AuthService {
         };
     }
 
-    async login(dto: LoginDto) {
-        const user = await this.usersService.findByEmail(dto.email);
+    async verifyEmail(token: string) {
+        const user = await this.usersService.findByVerificationToken(token);
         if (!user) {
-            throw new UnauthorizedException('Invalid credentials');
+            throw new BadRequestException('Invalid or expired verification token');
         }
 
-        const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
-        if (!passwordValid) {
-            throw new UnauthorizedException('Invalid credentials');
+        if (!user.emailVerificationExpiry || user.emailVerificationExpiry < new Date()) {
+            throw new BadRequestException('Verification token has expired. Please request a new one.');
         }
 
-        const tokens = await this.generateTokens(
-            user._id.toString(),
-            user.email,
-        );
+        await this.usersService.markEmailAsVerified(user._id.toString());
+
+        const tokens = await this.generateTokens(user._id.toString(), user.email);
         await this.storeRefreshToken(user._id.toString(), tokens.refreshToken);
 
         return {
@@ -74,6 +113,30 @@ export class AuthService {
             },
             ...tokens,
         };
+    }
+
+    async resendVerification(email: string) {
+        const user = await this.usersService.findByEmail(email);
+        if (!user) {
+            // Return generic message to avoid email enumeration
+            return { message: 'If that email exists, a verification link has been sent.' };
+        }
+
+        if (user.isEmailVerified) {
+            return { message: 'Email is already verified.' };
+        }
+
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.usersService.setEmailVerificationToken(
+            user._id.toString(),
+            verificationToken,
+            expiry,
+        );
+
+        await this.mailerService.sendVerificationEmail(user.email, verificationToken);
+
+        return { message: 'If that email exists, a verification link has been sent.' };
     }
 
     async refresh(userId: string, refreshToken: string) {
@@ -104,16 +167,85 @@ export class AuthService {
         return { message: 'Logged out successfully' };
     }
 
+    async changePassword(userId: string, currentPassword: string, newPassword: string) {
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const passwordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!passwordValid) {
+            throw new UnauthorizedException('Current password is incorrect');
+        }
+
+        const newHash = await bcrypt.hash(newPassword, 10);
+        await this.usersService.updatePassword(userId, newHash);
+
+        return { message: 'Password changed successfully' };
+    }
+
+    async changeEmail(userId: string, newEmail: string, password: string) {
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        const passwordValid = await bcrypt.compare(password, user.passwordHash);
+        if (!passwordValid) {
+            throw new UnauthorizedException('Password is incorrect');
+        }
+
+        const normalizedEmail = newEmail.toLowerCase();
+        if (normalizedEmail === user.email) {
+            throw new BadRequestException('New email is the same as current email');
+        }
+
+        const existing = await this.usersService.findByEmail(normalizedEmail);
+        if (existing) {
+            throw new ConflictException('Email already in use');
+        }
+
+        await this.usersService.updateEmail(userId, normalizedEmail);
+
+        // Mark as unverified and send a new verification email
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.usersService.setEmailVerificationToken(userId, verificationToken, expiry);
+        await this.usersService.markEmailAsUnverified(userId);
+        await this.mailerService.sendVerificationEmail(normalizedEmail, verificationToken);
+
+        return { message: 'Email changed. Please verify your new email address.' };
+    }
+
+    async deleteAccount(userId: string) {
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+            throw new UnauthorizedException('User not found');
+        }
+
+        // Delete all user data in parallel
+        await Promise.all([
+            this.mealsService.deleteAllForUser(userId),
+            this.weightService.deleteAllForUser(userId),
+            this.supplementsService.deleteAllForUser(userId),
+        ]);
+
+        // Delete the user document
+        await this.usersService.deleteUser(userId);
+
+        return { message: 'Account and all associated data have been permanently deleted.' };
+    }
+
     private async generateTokens(userId: string, email: string) {
         const payload = { sub: userId, email };
 
         const [accessToken, refreshToken] = await Promise.all([
             this.jwtService.signAsync(payload, {
-                secret: process.env.JWT_ACCESS_SECRET || 'dev-access-secret',
+                secret: process.env.JWT_ACCESS_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-access-secret'),
                 expiresIn: (process.env.JWT_ACCESS_EXPIRY || '15m') as any,
             }),
             this.jwtService.signAsync(payload, {
-                secret: process.env.JWT_REFRESH_SECRET || 'dev-refresh-secret',
+                secret: process.env.JWT_REFRESH_SECRET || (process.env.NODE_ENV === 'production' ? undefined : 'dev-refresh-secret'),
                 expiresIn: (process.env.JWT_REFRESH_EXPIRY || '7d') as any,
             }),
         ]);

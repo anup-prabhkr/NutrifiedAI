@@ -66,4 +66,8 @@ export class WeightService {
         });
         return result.deletedCount > 0;
     }
+
+    async deleteAllForUser(userId: string): Promise<void> {
+        await this.weightModel.deleteMany({ userId: new Types.ObjectId(userId) }).exec();
+    }
 }

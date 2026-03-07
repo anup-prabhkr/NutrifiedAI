@@ -10,5 +10,6 @@ import { WeightService } from './weight.service';
     ],
     controllers: [WeightController],
     providers: [WeightService],
+    exports: [WeightService],
 })
 export class WeightModule { }

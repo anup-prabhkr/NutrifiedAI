@@ -74,4 +74,46 @@ export class UsersService {
             .findOne({ 'subscription.stripeCustomerId': stripeCustomerId })
             .exec();
     }
+
+    async setEmailVerificationToken(
+        userId: string,
+        token: string,
+        expiry: Date,
+    ): Promise<void> {
+        await this.userModel
+            .findByIdAndUpdate(userId, { emailVerificationToken: token, emailVerificationExpiry: expiry })
+            .exec();
+    }
+
+    async findByVerificationToken(token: string): Promise<UserDocument | null> {
+        return this.userModel.findOne({ emailVerificationToken: token }).exec();
+    }
+
+    async markEmailAsVerified(userId: string): Promise<void> {
+        await this.userModel
+            .findByIdAndUpdate(userId, {
+                isEmailVerified: true,
+                emailVerificationToken: null,
+                emailVerificationExpiry: null,
+            })
+            .exec();
+    }
+
+    async markEmailAsUnverified(userId: string): Promise<void> {
+        await this.userModel
+            .findByIdAndUpdate(userId, { isEmailVerified: false })
+            .exec();
+    }
+
+    async updatePassword(userId: string, passwordHash: string): Promise<void> {
+        await this.userModel.findByIdAndUpdate(userId, { passwordHash }).exec();
+    }
+
+    async updateEmail(userId: string, email: string): Promise<void> {
+        await this.userModel.findByIdAndUpdate(userId, { email }).exec();
+    }
+
+    async deleteUser(userId: string): Promise<void> {
+        await this.userModel.findByIdAndDelete(userId).exec();
+    }
 }

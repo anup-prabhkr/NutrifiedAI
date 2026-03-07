@@ -82,4 +82,8 @@ export class MealsService {
             { $sort: { _id: 1 } },
         ]);
     }
+
+    async deleteAllForUser(userId: string): Promise<void> {
+        await this.mealModel.deleteMany({ userId: new Types.ObjectId(userId) }).exec();
+    }
 }

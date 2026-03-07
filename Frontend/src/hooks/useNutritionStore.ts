@@ -13,6 +13,7 @@ export interface Meal {
   fats: number;
   source: "ai" | "manual";
   date: string;
+  imageUrl?: string;
 }
 
 export interface WeightLog {
@@ -24,7 +25,15 @@ export interface WeightLog {
 export interface Supplement {
   id: string;
   name: string;
+  type: "yesno" | "measurable";
+  unit?: string;
   takenDates: string[];
+  measuredValues?: Record<string, number>; // date -> value for measurable
+}
+
+export interface WaterEntry {
+  date: string;
+  amount: number; // in ml
 }
 
 export interface ProfileData {
@@ -42,6 +51,8 @@ export interface ProfileData {
   bmiCategory: string;
   manualMacros: boolean;
   profilePicture: string;
+  targetWeight?: number;
+  weeklyWeightChange?: number; // kg per week
 }
 
 const TODAY = new Date().toISOString().split("T")[0];
@@ -62,7 +73,22 @@ const defaultProfile: ProfileData = {
   bmiCategory: "",
   manualMacros: false,
   profilePicture: "",
+  targetWeight: undefined,
+  weeklyWeightChange: undefined,
 };
+
+// ── Guest localStorage helpers ────────────────────────────
+const GUEST_PREFIX = "nv_guest_";
+function guestLoad<T>(key: string, fallback: T): T {
+  try { const raw = localStorage.getItem(GUEST_PREFIX + key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
+}
+function guestSave(key: string, value: any) {
+  localStorage.setItem(GUEST_PREFIX + key, JSON.stringify(value));
+}
+
+function isGuestMode(): boolean {
+  return localStorage.getItem("nv_guest_mode") === "true";
+}
 
 function mapMeal(m: MealData): Meal {
   return {
@@ -75,22 +101,40 @@ function mapMeal(m: MealData): Meal {
     fats: m.fats,
     source: m.source as "ai" | "manual",
     date: m.date,
+    imageUrl: m.imageUrl,
   };
 }
 
 export function useNutritionStore() {
-  const isAuthenticated = !!getAccessToken();
+  const isAuthenticated = !!getAccessToken() || isGuestMode();
+  const guest = isGuestMode();
 
-  const [meals, setMeals] = useState<Meal[]>([]);
-  const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
-  const [supplements, setSupplements] = useState<Supplement[]>([]);
-  const [profile, setProfile] = useState<ProfileData>(defaultProfile);
-  const [loading, setLoading] = useState(true);
+  const [meals, setMeals] = useState<Meal[]>(guest ? guestLoad("meals", []) : []);
+  const [weightLogs, setWeightLogs] = useState<WeightLog[]>(guest ? guestLoad("weights", []) : []);
+  const [supplements, setSupplements] = useState<Supplement[]>(guest ? guestLoad("supplements", []) : []);
+  const [profile, setProfile] = useState<ProfileData>(guest ? guestLoad("profile", defaultProfile) : defaultProfile);
+  const [waterLog, setWaterLog] = useState<WaterEntry[]>(guest ? guestLoad("water", []) : []);
+  const [waterCupSize, setWaterCupSizeState] = useState<number>(() => {
+    try { return parseInt(localStorage.getItem("nv_water_cup_size") || "250") || 250; } catch { return 250; }
+  });
+  const [loading, setLoading] = useState(!guest);
   const [selectedDate, setSelectedDateState] = useState(TODAY);
 
-  // ── Load data from API on mount ─────────────────────────
+  // Persist guest data
+  useEffect(() => { if (guest) guestSave("meals", meals); }, [guest, meals]);
+  useEffect(() => { if (guest) guestSave("weights", weightLogs); }, [guest, weightLogs]);
+  useEffect(() => { if (guest) guestSave("supplements", supplements); }, [guest, supplements]);
+  useEffect(() => { if (guest) guestSave("profile", profile); }, [guest, profile]);
+  useEffect(() => { if (guest) guestSave("water", waterLog); }, [guest, waterLog]);
+
+  const setWaterCupSize = useCallback((size: number) => {
+    setWaterCupSizeState(size);
+    localStorage.setItem("nv_water_cup_size", String(size));
+  }, []);
+
+  // ── Load data from API on mount (non-guest) ──────────────
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (guest || !getAccessToken()) {
       setLoading(false);
       return;
     }
@@ -118,7 +162,10 @@ export function useNutritionStore() {
           supRes.map((s) => ({
             id: s._id,
             name: s.name,
+            type: (s as any).type || "yesno",
+            unit: (s as any).unit,
             takenDates: s.takenDates,
+            measuredValues: (s as any).measuredValues || {},
           }))
         );
 
@@ -145,6 +192,8 @@ export function useNutritionStore() {
           bmiCategory: p.bmiCategory || "",
           manualMacros: !!p.manualMacros,
           profilePicture: p.profilePicture || "",
+          targetWeight: (p as any).targetWeight,
+          weeklyWeightChange: (p as any).weeklyWeightChange,
         });
       } catch (err) {
         console.error("Failed to fetch data:", err);
@@ -154,14 +203,14 @@ export function useNutritionStore() {
     };
 
     fetchAll();
-  }, [isAuthenticated]);
+  }, [guest]);
 
   // Fetch meals for a specific date
   const fetchMealsForDate = useCallback(async (date: string) => {
-    if (!isAuthenticated) return;
+    if (guest) return; // guest meals are all in state already
+    if (!getAccessToken()) return;
     try {
       const mealsRes = await mealsApi.getByDate(date);
-      // Merge with existing meals, replacing any for the same date
       setMeals((prev) => {
         const otherDates = prev.filter((m) => m.date !== date);
         return [...mealsRes.map(mapMeal), ...otherDates];
@@ -169,7 +218,7 @@ export function useNutritionStore() {
     } catch (err) {
       console.error("Failed to fetch meals for date:", err);
     }
-  }, [isAuthenticated]);
+  }, [guest]);
 
   const setSelectedDate = useCallback((date: string) => {
     setSelectedDateState(date);
@@ -189,6 +238,22 @@ export function useNutritionStore() {
     { calories: 0, protein: 0, carbs: 0, fats: 0 }
   );
 
+  // ── Water tracking ──────────────────────────────────────
+  const todayWater = waterLog.find((w) => w.date === selectedDate)?.amount || 0;
+
+  const addWater = useCallback((amount: number) => {
+    setWaterLog((prev) => {
+      const idx = prev.findIndex((w) => w.date === selectedDate);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], amount: Math.max(0, updated[idx].amount + amount) };
+        return updated;
+      }
+      if (amount > 0) return [...prev, { date: selectedDate, amount }];
+      return prev;
+    });
+  }, [selectedDate]);
+
   const addMeal = useCallback(async (meal: {
     mealName: string;
     calories: number;
@@ -197,7 +262,24 @@ export function useNutritionStore() {
     fats: number;
     source: "ai" | "manual";
     aiConfidence?: number;
+    imageUrl?: string;
   }) => {
+    if (guest) {
+      const newMeal: Meal = {
+        id: Date.now().toString(),
+        name: meal.mealName,
+        time: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+        calories: meal.calories,
+        protein: meal.protein,
+        carbs: meal.carbs,
+        fats: meal.fats,
+        source: meal.source,
+        date: selectedDate,
+        imageUrl: meal.imageUrl,
+      };
+      setMeals((prev) => [newMeal, ...prev]);
+      return;
+    }
     try {
       const created = await mealsApi.create({
         mealName: meal.mealName,
@@ -213,30 +295,47 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to add meal");
     }
-  }, [selectedDate]);
+  }, [selectedDate, guest]);
 
   const deleteMeal = useCallback(async (id: string) => {
+    if (guest) { setMeals((prev) => prev.filter((m) => m.id !== id)); return; }
     try {
       await mealsApi.delete(id);
       setMeals((prev) => prev.filter((m) => m.id !== id));
     } catch (err: any) {
       toast.error(err.message || "Failed to delete meal");
     }
-  }, []);
+  }, [guest]);
 
   const updateMeal = useCallback(async (id: string, updates: {
     mealName?: string; calories?: number; protein?: number; carbs?: number; fats?: number;
   }) => {
+    if (guest) {
+      setMeals((prev) => prev.map((m) => m.id === id ? { ...m, name: updates.mealName ?? m.name, calories: updates.calories ?? m.calories, protein: updates.protein ?? m.protein, carbs: updates.carbs ?? m.carbs, fats: updates.fats ?? m.fats } : m));
+      return;
+    }
     try {
       const updated = await mealsApi.update(id, updates);
       setMeals((prev) => prev.map((m) => (m.id === id ? mapMeal(updated) : m)));
     } catch (err: any) {
       toast.error(err.message || "Failed to update meal");
     }
-  }, []);
+  }, [guest]);
 
   const addWeightLog = useCallback(async (weight: number, date?: string) => {
     const logDate = date || TODAY;
+    if (guest) {
+      setWeightLogs((prev) => {
+        const existing = prev.findIndex((l) => l.date === logDate);
+        if (existing >= 0) {
+          const updated = [...prev];
+          updated[existing] = { ...updated[existing], weight };
+          return updated;
+        }
+        return [{ id: Date.now().toString(), date: logDate, weight }, ...prev].sort((a, b) => b.date.localeCompare(a.date));
+      });
+      return;
+    }
     try {
       const result = await weightApi.log(weight, date ? new Date(date + "T12:00:00") : undefined);
       setWeightLogs((prev) => {
@@ -251,18 +350,23 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to log weight");
     }
-  }, []);
+  }, [guest]);
 
   const deleteWeightLog = useCallback(async (id: string) => {
+    if (guest) { setWeightLogs((prev) => prev.filter((l) => l.id !== id)); return; }
     try {
       await weightApi.delete(id);
       setWeightLogs((prev) => prev.filter((l) => l.id !== id));
     } catch (err: any) {
       toast.error(err.message || "Failed to delete weight log");
     }
-  }, []);
+  }, [guest]);
 
   const updateWeightLog = useCallback(async (id: string, weight: number, date?: string) => {
+    if (guest) {
+      setWeightLogs((prev) => prev.map((l) => l.id === id ? { ...l, weight } : l));
+      return;
+    }
     try {
       const result = await weightApi.update(id, weight, date ? new Date(date + "T12:00:00") : undefined);
       setWeightLogs((prev) =>
@@ -271,12 +375,28 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to update weight log");
     }
-  }, []);
+  }, [guest]);
 
-  const toggleSupplement = useCallback(async (name: string, date?: string) => {
+  const toggleSupplement = useCallback(async (name: string, date?: string, value?: number) => {
     const sup = supplements.find((s) => s.name === name);
     if (!sup) return;
     const toggleDate = date || TODAY;
+
+    if (guest) {
+      setSupplements((prev) => prev.map((s) => {
+        if (s.name !== name) return s;
+        const taken = s.takenDates.includes(toggleDate);
+        const newTaken = taken ? s.takenDates.filter((d) => d !== toggleDate) : [...s.takenDates, toggleDate];
+        const newMeasured = { ...(s.measuredValues || {}) };
+        if (s.type === "measurable" && !taken && value !== undefined) {
+          newMeasured[toggleDate] = value;
+        } else if (taken) {
+          delete newMeasured[toggleDate];
+        }
+        return { ...s, takenDates: newTaken, measuredValues: newMeasured };
+      }));
+      return;
+    }
     try {
       const updated = await supplementsApi.toggleTaken(sup.id, toggleDate);
       setSupplements((prev) =>
@@ -285,31 +405,44 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to toggle supplement");
     }
-  }, [supplements]);
+  }, [supplements, guest]);
 
-  const addSupplement = useCallback(async (name: string) => {
+  const addSupplement = useCallback(async (name: string, type: "yesno" | "measurable" = "yesno", unit?: string) => {
+    if (guest) {
+      if (supplements.some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+        toast.error("Supplement already exists");
+        return;
+      }
+      setSupplements((prev) => [...prev, { id: Date.now().toString(), name, type, unit, takenDates: [], measuredValues: {} }]);
+      return;
+    }
     try {
-      const created = await supplementsApi.create({ name });
-      setSupplements((prev) => [...prev, { id: created._id, name: created.name, takenDates: created.takenDates }]);
+      const created = await supplementsApi.create({ name, dose: unit, frequency: type });
+      setSupplements((prev) => [...prev, { id: created._id, name: created.name, type: type, unit: unit, takenDates: created.takenDates, measuredValues: {} }]);
     } catch (err: any) {
       toast.error(err.message || "Failed to add supplement");
     }
-  }, []);
+  }, [supplements, guest]);
 
   const deleteSupplement = useCallback(async (name: string) => {
     const sup = supplements.find((s) => s.name === name);
     if (!sup) return;
+    if (guest) { setSupplements((prev) => prev.filter((s) => s.id !== sup.id)); return; }
     try {
       await supplementsApi.delete(sup.id);
       setSupplements((prev) => prev.filter((s) => s.id !== sup.id));
     } catch (err: any) {
       toast.error(err.message || "Failed to delete supplement");
     }
-  }, [supplements]);
+  }, [supplements, guest]);
 
   const updateSupplement = useCallback(async (currentName: string, newName: string) => {
     const sup = supplements.find((s) => s.name === currentName);
     if (!sup) return;
+    if (guest) {
+      setSupplements((prev) => prev.map((s) => s.id === sup.id ? { ...s, name: newName } : s));
+      return;
+    }
     try {
       const updated = await supplementsApi.update(sup.id, { name: newName });
       setSupplements((prev) =>
@@ -318,9 +451,14 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to update supplement");
     }
-  }, [supplements]);
+  }, [supplements, guest]);
 
   const updateProfile = useCallback(async (updates: Partial<ProfileData>) => {
+    if (guest) {
+      setProfile((prev) => ({ ...prev, ...updates }));
+      toast.success("Profile saved");
+      return;
+    }
     try {
       const apiUpdates: Record<string, any> = {};
       if (updates.height) apiUpdates.height = parseFloat(updates.height);
@@ -335,10 +473,11 @@ export function useNutritionStore() {
       if (updates.profilePicture !== undefined) apiUpdates.profilePicture = updates.profilePicture;
       if (updates.calorieTarget) apiUpdates.calorieTarget = updates.calorieTarget;
       if (updates.macroTargets) apiUpdates.macroTargets = updates.macroTargets;
+      if (updates.targetWeight !== undefined) apiUpdates.targetWeight = updates.targetWeight;
+      if (updates.weeklyWeightChange !== undefined) apiUpdates.weeklyWeightChange = updates.weeklyWeightChange;
 
       const res = await profileApi.update(apiUpdates);
 
-      // Use server-computed values (BMI, calories, macros) from the response
       const p = res.profile || {};
       const targets = p.macroTargets || updates.macroTargets || { protein: 0, carbs: 0, fats: 0 };
       setProfile((prev) => ({
@@ -357,7 +496,7 @@ export function useNutritionStore() {
     } catch (err: any) {
       toast.error(err.message || "Failed to update profile");
     }
-  }, []);
+  }, [guest]);
 
   // Use server-computed macro targets directly
   const macroTargets = profile.macroTargets;
@@ -386,5 +525,10 @@ export function useNutritionStore() {
     today: TODAY,
     selectedDate,
     setSelectedDate,
+    waterLog,
+    todayWater,
+    addWater,
+    waterCupSize,
+    setWaterCupSize,
   };
 }

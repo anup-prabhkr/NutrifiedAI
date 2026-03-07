@@ -12,17 +12,30 @@ import {
 interface AuthContextType {
     user: UserData | null;
     isAuthenticated: boolean;
+    isGuest: boolean;
     isLoading: boolean;
     login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string) => Promise<void>;
+    loginAsGuest: () => void;
     logout: () => Promise<void>;
     refreshUser: () => Promise<void>;
 }
+
+const GUEST_KEY = 'nv_guest_mode';
+
+const guestUser: UserData = {
+    id: 'guest',
+    name: 'Guest',
+    email: 'guest@local',
+    profile: {},
+    subscription: { tier: 'free', status: 'active' },
+};
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<UserData | null>(null);
+    const [isGuest, setIsGuest] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
     const refreshUser = useCallback(async () => {
@@ -30,16 +43,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const profile = await profileApi.get();
             setUser(profile);
         } catch {
-            // Don't clear tokens here — apiFetch already clears them and fires
-            // the 'auth:session-expired' event if the refresh token is invalid.
-            // For transient errors (network issues), we keep tokens so the user
-            // stays logged in and can retry.
             setUser(null);
         }
     }, []);
 
-    // Check for existing session on mount — access OR refresh token is enough
     useEffect(() => {
+        const guestMode = localStorage.getItem(GUEST_KEY);
+        if (guestMode === 'true') {
+            setUser(guestUser);
+            setIsGuest(true);
+            setIsLoading(false);
+            return;
+        }
         const hasSession = getAccessToken() || getRefreshToken();
         if (hasSession) {
             refreshUser().finally(() => setIsLoading(false));
@@ -48,10 +63,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [refreshUser]);
 
-    // Listen for session expiry fired by apiFetch when refresh token is invalid
     useEffect(() => {
         const handleSessionExpired = () => {
             setUser(null);
+            setIsGuest(false);
         };
         window.addEventListener('auth:session-expired', handleSessionExpired);
         return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
@@ -60,16 +75,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const login = async (email: string, password: string) => {
         const res = await authApi.login({ email, password });
         setTokens(res.accessToken, res.refreshToken);
+        localStorage.removeItem(GUEST_KEY);
+        setIsGuest(false);
         setUser(res.user);
     };
 
     const register = async (name: string, email: string, password: string) => {
         const res = await authApi.register({ name, email, password });
         setTokens(res.accessToken, res.refreshToken);
+        localStorage.removeItem(GUEST_KEY);
+        setIsGuest(false);
         setUser(res.user);
     };
 
+    const loginAsGuest = () => {
+        localStorage.setItem(GUEST_KEY, 'true');
+        setIsGuest(true);
+        setUser(guestUser);
+    };
+
     const logout = async () => {
+        if (isGuest) {
+            localStorage.removeItem(GUEST_KEY);
+            setIsGuest(false);
+            setUser(null);
+            return;
+        }
         try {
             await authApi.logout();
         } catch {
@@ -84,9 +115,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             value={{
                 user,
                 isAuthenticated: !!user,
+                isGuest,
                 isLoading,
                 login,
                 register,
+                loginAsGuest,
                 logout,
                 refreshUser,
             }}

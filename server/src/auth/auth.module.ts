@@ -8,12 +8,20 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { JwtAuthGuard } from './auth.guard';
 import { UsersModule } from '../users/users.module';
+import { MailerModule } from '../mailer/mailer.module';
+import { MealsModule } from '../meals/meals.module';
+import { WeightModule } from '../weight/weight.module';
+import { SupplementsModule } from '../supplements/supplements.module';
 
 @Module({
     imports: [
         UsersModule,
         PassportModule,
         JwtModule.register({}),
+        MailerModule,
+        MealsModule,
+        WeightModule,
+        SupplementsModule,
     ],
     controllers: [AuthController],
     providers: [
@@ -25,3 +33,4 @@ import { UsersModule } from '../users/users.module';
     exports: [AuthService],
 })
 export class AuthModule { }
+

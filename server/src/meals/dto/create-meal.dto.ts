@@ -1,22 +1,27 @@
-import { IsString, IsNumber, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsEnum, Min, IsNotEmpty } from 'class-validator';
 
 export class CreateMealDto {
     @IsString()
+    @IsNotEmpty()
     mealName: string;
 
     @IsNumber()
+    @Min(0)
     calories: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
     protein?: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
     carbs?: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
     fats?: number;
 
     @IsOptional()

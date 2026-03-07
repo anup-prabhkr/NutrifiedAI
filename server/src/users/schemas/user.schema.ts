@@ -55,6 +55,12 @@ export class UserProfile {
 
     @Prop()
     profilePicture: string;
+
+    @Prop()
+    targetWeight: number;
+
+    @Prop()
+    weeklyWeightChange: number;
 }
 
 @Schema({ _id: false })
@@ -91,6 +97,15 @@ export class User {
     @Prop()
     refreshTokenHash: string;
 
+    @Prop({ default: false })
+    isEmailVerified: boolean;
+
+    @Prop()
+    emailVerificationToken: string;
+
+    @Prop()
+    emailVerificationExpiry: Date;
+
     createdAt: Date;
     updatedAt: Date;
 }
@@ -98,3 +113,4 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.index({ 'subscription.tier': 1 });
+UserSchema.index({ emailVerificationToken: 1 }, { sparse: true });
