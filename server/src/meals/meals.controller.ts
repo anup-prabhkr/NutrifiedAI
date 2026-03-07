@@ -16,6 +16,7 @@ import { GeminiService } from '../gemini/gemini.service';
 import { CreateMealDto } from './dto/create-meal.dto';
 import { AnalyzeMealDto } from './dto/analyze-meal.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @Controller('meals')
 export class MealsController {
@@ -24,10 +25,10 @@ export class MealsController {
         private geminiService: GeminiService,
     ) { }
 
+    @Public()
     @Post('analyze')
     @Throttle({ default: { limit: 10, ttl: 60000 } })
     async analyze(
-        @CurrentUser() user: { userId: string },
         @Body() dto: AnalyzeMealDto,
     ) {
         if (!dto.imageBase64 && !dto.description) {

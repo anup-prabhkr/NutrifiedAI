@@ -26,6 +26,27 @@ export class UsersService {
         });
     }
 
+    async findByGoogleId(googleId: string): Promise<UserDocument | null> {
+        return this.userModel.findOne({ googleId }).exec();
+    }
+
+    async createGoogleUser(data: {
+        name: string;
+        email: string;
+        googleId: string;
+    }): Promise<UserDocument> {
+        return this.userModel.create({
+            name: data.name,
+            email: data.email.toLowerCase(),
+            googleId: data.googleId,
+            isEmailVerified: true,
+        });
+    }
+
+    async linkGoogleId(userId: string, googleId: string): Promise<void> {
+        await this.userModel.findByIdAndUpdate(userId, { googleId, isEmailVerified: true }).exec();
+    }
+
     async updateRefreshToken(
         userId: string | Types.ObjectId,
         refreshTokenHash: string | null,

@@ -5,11 +5,14 @@ import {
     Delete,
     Body,
     Query,
+    Req,
+    Res,
     UseGuards,
     HttpCode,
     HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -84,6 +87,35 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     async deleteAccount(@CurrentUser() user: { userId: string }) {
         return this.authService.deleteAccount(user.userId);
+    }
+
+    @Public()
+    @Get('google')
+    @UseGuards(AuthGuard('google'))
+    async googleAuth() {
+        // Guard redirects to Google
+    }
+
+    @Public()
+    @Get('google/callback')
+    @UseGuards(AuthGuard('google'))
+    async googleCallback(@Req() req: Request, @Res() res: Response) {
+        const googleUser = req.user as {
+            googleId: string;
+            email: string;
+            name: string;
+            picture?: string;
+        };
+
+        const result = await this.authService.googleLogin(googleUser);
+
+        // Redirect to frontend with tokens as query params
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const params = new URLSearchParams({
+            accessToken: result.accessToken,
+            refreshToken: result.refreshToken,
+        });
+        res.redirect(`${frontendUrl}/auth/google/callback?${params.toString()}`);
     }
 }
 

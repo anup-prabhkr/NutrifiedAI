@@ -85,8 +85,11 @@ export class User {
     @Prop({ required: true, unique: true, index: true })
     email: string;
 
-    @Prop({ required: true })
+    @Prop()
     passwordHash: string;
+
+    @Prop({ sparse: true, index: true })
+    googleId: string;
 
     @Prop({ type: UserProfile, default: () => ({}) })
     profile: UserProfile;
