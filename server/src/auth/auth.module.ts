@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from './auth.guard';
 import { UsersModule } from '../users/users.module';
 import { MailerModule } from '../mailer/mailer.module';
@@ -28,6 +29,7 @@ import { SupplementsModule } from '../supplements/supplements.module';
         AuthService,
         JwtStrategy,
         JwtRefreshStrategy,
+        GoogleStrategy,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
     ],
     exports: [AuthService],

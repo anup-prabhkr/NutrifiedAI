@@ -61,6 +61,10 @@ export class AuthService {
             throw new UnauthorizedException('Invalid credentials');
         }
 
+        if (!user.passwordHash) {
+            throw new UnauthorizedException('This account uses Google sign-in. Please sign in with Google.');
+        }
+
         const passwordValid = await bcrypt.compare(dto.password, user.passwordHash);
         if (!passwordValid) {
             throw new UnauthorizedException('Invalid credentials');
@@ -234,6 +238,52 @@ export class AuthService {
         await this.usersService.deleteUser(userId);
 
         return { message: 'Account and all associated data have been permanently deleted.' };
+    }
+
+    async googleLogin(googleUser: {
+        googleId: string;
+        email: string;
+        name: string;
+        picture?: string;
+    }) {
+        if (!googleUser.email) {
+            throw new BadRequestException('Google account has no email');
+        }
+
+        // 1. Check if user exists by googleId
+        let user = await this.usersService.findByGoogleId(googleUser.googleId);
+
+        if (!user) {
+            // 2. Check if a user with this email already exists (registered via email/password)
+            user = await this.usersService.findByEmail(googleUser.email);
+
+            if (user) {
+                // Link Google account to existing user
+                await this.usersService.linkGoogleId(user._id.toString(), googleUser.googleId);
+                user = await this.usersService.findById(user._id.toString());
+            } else {
+                // 3. Create a new user
+                user = await this.usersService.createGoogleUser({
+                    name: googleUser.name || googleUser.email.split('@')[0],
+                    email: googleUser.email,
+                    googleId: googleUser.googleId,
+                });
+            }
+        }
+
+        const tokens = await this.generateTokens(user!._id.toString(), user!.email);
+        await this.storeRefreshToken(user!._id.toString(), tokens.refreshToken);
+
+        return {
+            user: {
+                id: user!._id.toString(),
+                name: user!.name,
+                email: user!.email,
+                profile: user!.profile,
+                subscription: user!.subscription,
+            },
+            ...tokens,
+        };
     }
 
     private async generateTokens(userId: string, email: string) {
